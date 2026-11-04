@@ -14,3 +14,7 @@
 - Visual Studio Code
 - Git
 - GitHub
+
+## Commit signing
+
+Git commit signing is configured for this repository.
