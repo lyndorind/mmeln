@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "mmeln"
-version = "0.1.0"
+version = "1.1.0"
 description = "Laboratory work 4 package"
 readme = "README.md"
 requires-python = ">=3.9"
