@@ -9,7 +9,7 @@ description = "Laboratory work 5 CI/CD package"
 requires-python = ">=3.11"
 dependencies = [
     "requests==2.25.0",
-    "urllib3==1.26.4",
+    "urllib3==2.8.0",
 ]
 
 [tool.setuptools.packages.find]
