@@ -1,6 +1,6 @@
 import allure
 
-from mmeln.app import farewell, greet
+from mmeln.app import farewell, greet, status
 
 
 @allure.feature("Greeting module")
@@ -32,3 +32,12 @@ def test_farewell():
     result = farewell(user_name)
     # Assert
     assert result == "Goodbye, KPI!"
+
+
+@allure.feature("System module")
+@allure.story("Health status check")
+def test_status():
+    # Act
+    result = status()
+    # Assert
+    assert result == "OK"
