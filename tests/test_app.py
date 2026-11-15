@@ -1,6 +1,6 @@
 import allure
 
-from mmeln.app import farewell, greet, status
+from mmeln.app import add, farewell, greet, status, subtract
 
 
 @allure.feature("Greeting module")
@@ -41,3 +41,21 @@ def test_status():
     result = status()
     # Assert
     assert result == "OK"
+
+
+@allure.feature("Math module")
+@allure.story("Addition")
+def test_add():
+    # Arrange & Act
+    result = add(2, 3)
+    # Assert
+    assert result == 5
+
+
+@allure.feature("Math module")
+@allure.story("Subtraction")
+def test_subtract():
+    # Arrange & Act
+    result = subtract(10, 4)
+    # Assert
+    assert result == 6
