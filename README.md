@@ -18,3 +18,8 @@
 ## Commit signing
 
 Git commit signing is configured for this repository.
+
+## Можливості пакета `mmeln`
+- `greet(name)` — формує привітання для користувача.
+- `farewell(name)` — формує прощання з користувачем.
+- Автоматизована перевірка збірки у Pull Request та публікація релізів через GitHub Actions.
