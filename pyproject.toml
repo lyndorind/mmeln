@@ -5,6 +5,14 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "mmeln"
 version = "1.2.0"
-description = "Laboratory work 4 package"
+description = "Laboratory work package"
 readme = "README.md"
 requires-python = ">=3.9"
+dependencies = []
+
+[tool.ruff]
+line-length = 88
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W"]
