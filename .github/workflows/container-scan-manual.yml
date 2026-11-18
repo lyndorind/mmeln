@@ -1,0 +1,77 @@
+name: Manual Container Vulnerability Scan (by Tag)
+
+on:
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: 'Тег (версія) Docker-образу для сканування (наприклад, 1.3.0 або latest)'
+        required: true
+        default: '1.3.0'
+        type: string
+
+permissions:
+  contents: read
+  security-events: write
+
+env:
+  IMAGE_REPO: lyndorind/mmeln
+
+jobs:
+  scan-selected-tag:
+    name: Scan ${{ env.IMAGE_REPO }}:${{ inputs.image_tag }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Pull specified Docker image tag
+        run: docker pull ${{ env.IMAGE_REPO }}:${{ inputs.image_tag }}
+
+      # 1. Сканування за допомогою Trivy
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: ${{ env.IMAGE_REPO }}:${{ inputs.image_tag }}
+          format: 'sarif'
+          output: 'trivy-manual.sarif'
+          severity: 'CRITICAL,HIGH,MEDIUM,LOW'
+
+      - name: Upload Trivy scan results to GitHub Security tab
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: 'trivy-manual.sarif'
+          category: 'trivy-manual-${{ inputs.image_tag }}'
+
+      # 2. Сканування за допомогою Grype
+      - name: Run Grype vulnerability scanner
+        uses: anchore/scan-action@v4
+        id: grype
+        with:
+          image: ${{ env.IMAGE_REPO }}:${{ inputs.image_tag }}
+          output-format: sarif
+          fail-build: false
+
+      - name: Upload Grype scan results to GitHub Security tab
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: ${{ steps.grype.outputs.sarif }}
+          category: 'grype-manual-${{ inputs.image_tag }}'
+
+      # 3. Сканування за допомогою Snyk
+      - name: Run Snyk to check Docker image for vulnerabilities
+        uses: snyk/actions/docker@master
+        continue-on-error: true
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        with:
+          image: ${{ env.IMAGE_REPO }}:${{ inputs.image_tag }}
+          args: --sarif-file-output=snyk-manual.sarif
+
+      - name: Upload Snyk scan results to GitHub Security tab
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: 'snyk-manual.sarif'
+          category: 'snyk-manual-${{ inputs.image_tag }}'
