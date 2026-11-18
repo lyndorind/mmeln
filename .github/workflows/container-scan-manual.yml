@@ -44,19 +44,16 @@ jobs:
           category: 'trivy-manual-${{ inputs.image_tag }}'
 
       # 2. Grype
-      - name: Run Grype vulnerability scanner
-        uses: anchore/scan-action@v4
-        id: grype
-        with:
-          image: ${{ env.IMAGE_REPO }}:${{ inputs.image_tag }}
-          output-format: sarif
-          fail-build: false
+      - name: Install and Run Grype vulnerability scanner
+        run: |
+          curl -sSfL https://raw.githubusercontent.com/anchore/grype/main/install.sh | sh -s -- -b /usr/local/bin
+          grype ${{ env.IMAGE_REPO }}:${{ inputs.image_tag }} -o sarif --file grype-manual.sarif
 
       - name: Upload Grype scan results to GitHub Security tab
         uses: github/codeql-action/upload-sarif@v3
-        if: always() && steps.grype.outputs.sarif != ''
+        if: always()
         with:
-          sarif_file: ${{ steps.grype.outputs.sarif }}
+          sarif_file: 'grype-manual.sarif'
           category: 'grype-manual-${{ inputs.image_tag }}'
 
       # 3. Snyk
@@ -72,7 +69,7 @@ jobs:
 
       - name: Upload Snyk scan results to GitHub Security tab
         uses: github/codeql-action/upload-sarif@v3
-        if: always() && hashFiles('snyk-manual.sarif') != ''
+        if: always()
         with:
           sarif_file: 'snyk-manual.sarif'
           category: 'snyk-manual-${{ inputs.image_tag }}'
