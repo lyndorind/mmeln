@@ -18,7 +18,7 @@ env:
 
 jobs:
   scan-selected-tag:
-    name: Scan ${{ env.IMAGE_REPO }}:${{ inputs.image_tag }}
+    name: Scan lyndorind/mmeln:${{ inputs.image_tag }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
