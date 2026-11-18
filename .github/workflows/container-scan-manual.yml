@@ -65,7 +65,8 @@ jobs:
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
         run: |
-          snyk container test ${{ env.IMAGE_REPO }}:${{ inputs.image_tag }} --file=Dockerfile --sarif-file-output=snyk-manual.sarif || true
+          snyk container test ${{ env.IMAGE_REPO }}:${{ inputs.image_tag }} --file=Dockerfile --sarif-file-output=snyk-raw.sarif || true
+          jq '(.runs[].tool.driver.rules[]?.properties["security-severity"] | select(. == null)) = "0.0"' snyk-raw.sarif > snyk-manual.sarif
 
       - name: Upload Snyk scan results to GitHub Security tab
         uses: github/codeql-action/upload-sarif@v3
