@@ -10,3 +10,6 @@ allure-results/
 allure-report/secrets/
 
 secrets/
+allure-report/
+secrets/
+reports/
