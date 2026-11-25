@@ -184,3 +184,64 @@ jobs:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
         with:
           args: --file=requirements.txt
+  load-test:
+    name: Load Testing (Apache JMeter)
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: testpassword
+          POSTGRES_DB: mmeln_db
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U postgres -d mmeln_db"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=5
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install application dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .
+
+      - name: Start FastAPI application in background
+        env:
+          DB_HOST: localhost
+          DB_PORT: 5432
+          DB_NAME: mmeln_db
+          DB_USER: postgres
+          DB_PASSWORD: testpassword
+        run: |
+          nohup python -m mmeln.app > app_load.log 2>&1 &
+          for i in {1..15}; do
+            if curl -s http://localhost:8000/health | grep -q "connected"; then
+              echo "API is ready!"
+              break
+            fi
+            sleep 1
+          done
+
+      - name: Run Apache JMeter load test
+        run: |
+          mkdir -p reports
+          docker run --rm --network host -v "${{ github.workspace }}":/test justb4/jmeter -n -t /test/jmeter/load_test.jmx -l /test/reports/jmeter-results.jtl -e -o /test/reports/jmeter-html -JTHREADS=20 -JLOOPS=10
+
+      - name: Upload JMeter HTML Dashboard Report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: jmeter-load-test-report
+          path: reports/jmeter-html/

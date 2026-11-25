@@ -1,0 +1,51 @@
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: mmeln-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_DB: mmeln_db
+      POSTGRES_PASSWORD_FILE: /run/secrets/db_password
+    secrets:
+      - db_password
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d mmeln_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: lyndorind/mmeln:compose-local
+    container_name: mmeln-web
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      APP_HOST: 0.0.0.0
+      APP_PORT: 8000
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_NAME: mmeln_db
+      DB_USER: postgres
+      DB_PASSWORD_FILE: /run/secrets/db_password
+    secrets:
+      - db_password
+    ports:
+      - "8000:8000"
+
+volumes:
+  postgres_data:
+    driver: local
+
+secrets:
+  db_password:
+    file: ./secrets/db_password.txt

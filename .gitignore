@@ -8,3 +8,5 @@ build/
 coverage.xml
 allure-results/
 allure-report/
+secrets/
+reports/
