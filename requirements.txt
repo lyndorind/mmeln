@@ -1,2 +1,5 @@
-requests==2.25.0
-urllib3==1.26.4
+fastapi>=0.115.0
+uvicorn[standard]>=0.32.0
+psycopg[binary]>=3.2.0
+requests>=2.32.3
+urllib3>=2.2.3
