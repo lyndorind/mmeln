@@ -7,4 +7,10 @@ build/
 .coverage
 coverage.xml
 allure-results/
+allure-report/secrets/
+
+secrets/
 allure-report/
+secrets/
+reports/
+.env
