@@ -8,11 +8,10 @@ import uvicorn
 from fastapi import FastAPI, HTTPException
 from opentelemetry import metrics, trace
 from opentelemetry._logs import set_logger_provider
-from opentelemetry.exporter.otlp.proto.grpc._log_exporter import OTLPLogExporter
-from opentelemetry.exporter.otlp.proto.grpc.metric_exporter import OTLPMetricExporter
-from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
+from opentelemetry.exporter.otlp.proto.http._log_exporter import OTLPLogExporter
+from opentelemetry.exporter.otlp.proto.http.metric_exporter import OTLPMetricExporter
+from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
 from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
-from opentelemetry.instrumentation.logging import LoggingInstrumentor
 from opentelemetry.sdk._logs import LoggerProvider, LoggingHandler
 from opentelemetry.sdk._logs.export import BatchLogRecordProcessor
 from opentelemetry.sdk.metrics import MeterProvider
@@ -87,6 +86,46 @@ db_query_counter = meter.create_counter(
 )
 
 
+def _setup_telemetry() -> tuple[logging.Logger, trace.Tracer, metrics.Counter]:
+    service_name = os.getenv("OTEL_SERVICE_NAME", "mmeln-api")
+    resource = Resource.create({"service.name": service_name})
+
+    tracer_provider = TracerProvider(resource=resource)
+    tracer_provider.add_span_processor(BatchSpanProcessor(OTLPSpanExporter()))
+    trace.set_tracer_provider(tracer_provider)
+    otel_tracer = trace.get_tracer("mmeln.app")
+
+    metric_reader = PeriodicExportingMetricReader(OTLPMetricExporter())
+    meter_provider = MeterProvider(resource=resource, metric_readers=[metric_reader])
+    metrics.set_meter_provider(meter_provider)
+    meter = metrics.get_meter("mmeln.app")
+    queries_counter = meter.create_counter(
+        name="db.queries",
+        description="Total number of database queries executed",
+        unit="1",
+    )
+
+    logger_provider = LoggerProvider(resource=resource)
+    logger_provider.add_log_record_processor(
+        BatchLogRecordProcessor(OTLPLogExporter())
+    )
+    set_logger_provider(logger_provider)
+
+    app_logger = logging.getLogger("mmeln.app")
+    app_logger.setLevel(logging.INFO)
+    app_logger.addHandler(
+        LoggingHandler(level=logging.INFO, logger_provider=logger_provider)
+    )
+    return app_logger, otel_tracer, queries_counter
+
+
+logger, tracer, db_queries_counter = _setup_telemetry()
+
+
+def record_db_query(operation: str) -> None:
+    db_queries_counter.add(1, {"db.operation": operation})
+
+
 def greet(name: str = "World") -> str:
     return f"Hello, {name}!"
 
@@ -131,18 +170,21 @@ def get_connection():
 
 
 def init_db() -> None:
-    with get_connection() as conn:
-        with conn.cursor() as cur:
-            cur.execute(
-                """
-                CREATE TABLE IF NOT EXISTS items (
-                    id SERIAL PRIMARY KEY,
-                    title VARCHAR(100) NOT NULL,
-                    description TEXT DEFAULT ''
-                );
-                """
-            )
-        conn.commit()
+    with tracer.start_as_current_span("db.init_db"):
+        record_db_query("ddl")
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS items (
+                        id SERIAL PRIMARY KEY,
+                        title VARCHAR(100) NOT NULL,
+                        description TEXT DEFAULT ''
+                    );
+                    """
+                )
+            conn.commit()
+        logger.info("Database initialized")
 
 
 @asynccontextmanager
@@ -153,8 +195,8 @@ async def lifespan(app: FastAPI):
     yield
 
 
-app = FastAPI(title="mmeln API", version="0.3.0", lifespan=lifespan)
-setup_telemetry(app)
+app = FastAPI(title="mmeln API", version="0.2.0", lifespan=lifespan)
+FastAPIInstrumentor.instrument_app(app)
 
 
 class ItemCreate(BaseModel):
@@ -164,19 +206,18 @@ class ItemCreate(BaseModel):
 
 @app.get("/health")
 def health_check():
-    with tracer.start_as_current_span("db.health_check"):
-        try:
+    try:
+        with tracer.start_as_current_span("db.health_check"):
+            record_db_query("health")
             with get_connection() as conn:
                 with conn.cursor() as cur:
                     cur.execute("SELECT 1;")
-            db_query_counter.add(1, {"operation": "health"})
-            logger.info("Health check succeeded: database connected")
-            return {"status": "OK", "database": "connected"}
-        except Exception as exc:
-            logger.error("Health check failed: %s", exc)
-            raise HTTPException(
-                status_code=503, detail=f"Database unavailable: {exc}"
-            ) from exc
+        return {"status": "OK", "database": "connected"}
+    except Exception as exc:
+        logger.error("Health check failed: %s", exc)
+        raise HTTPException(
+            status_code=503, detail=f"Database unavailable: {exc}"
+        ) from exc
 
 
 @app.get("/greet")
@@ -187,8 +228,8 @@ def api_greet(name: str = "World"):
 
 @app.post("/items", status_code=201)
 def create_item(item: ItemCreate):
-    with tracer.start_as_current_span("db.insert_item") as span:
-        span.set_attribute("item.title", item.title)
+    with tracer.start_as_current_span("db.create_item"):
+        record_db_query("insert")
         with get_connection() as conn:
             with conn.cursor() as cur:
                 cur.execute(
@@ -198,30 +239,27 @@ def create_item(item: ItemCreate):
                 )
                 created = cur.fetchone()
             conn.commit()
-        items_created_counter.add(1)
-        db_query_counter.add(1, {"operation": "insert"})
-        logger.info("Created new item id=%s title=%s", created["id"], item.title)
-        return created
+    logger.info("Created item id=%s", created["id"])
+    return created
 
 
 @app.get("/items")
 def list_items():
-    with tracer.start_as_current_span("db.select_items"):
+    with tracer.start_as_current_span("db.list_items"):
+        record_db_query("select")
         with get_connection() as conn:
             with conn.cursor() as cur:
                 cur.execute(
                     "SELECT id, title, description FROM items ORDER BY id ASC;"
                 )
                 rows = cur.fetchall()
-        db_query_counter.add(1, {"operation": "select_all"})
-        logger.info("Listed %d items from database", len(rows))
-        return {"items": rows}
+    return {"items": rows}
 
 
 @app.get("/items/{item_id}")
 def get_item(item_id: int):
-    with tracer.start_as_current_span("db.select_item_by_id") as span:
-        span.set_attribute("item.id", item_id)
+    with tracer.start_as_current_span("db.get_item"):
+        record_db_query("select")
         with get_connection() as conn:
             with conn.cursor() as cur:
                 cur.execute(
@@ -229,17 +267,15 @@ def get_item(item_id: int):
                     (item_id,),
                 )
                 row = cur.fetchone()
-        db_query_counter.add(1, {"operation": "select_one"})
-        if not row:
-            logger.warning("Item id=%d not found", item_id)
-            raise HTTPException(status_code=404, detail="Item not found")
-        return row
+    if not row:
+        raise HTTPException(status_code=404, detail="Item not found")
+    return row
 
 
 @app.delete("/items/{item_id}")
 def delete_item(item_id: int):
-    with tracer.start_as_current_span("db.delete_item") as span:
-        span.set_attribute("item.id", item_id)
+    with tracer.start_as_current_span("db.delete_item"):
+        record_db_query("delete")
         with get_connection() as conn:
             with conn.cursor() as cur:
                 cur.execute(
@@ -248,12 +284,10 @@ def delete_item(item_id: int):
                 )
                 deleted = cur.fetchone()
             conn.commit()
-        db_query_counter.add(1, {"operation": "delete"})
-        if not deleted:
-            logger.warning("Attempted to delete non-existent item id=%d", item_id)
-            raise HTTPException(status_code=404, detail="Item not found")
-        logger.info("Deleted item id=%d", item_id)
-        return {"deleted_id": deleted["id"]}
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Item not found")
+    logger.info("Deleted item id=%s", deleted["id"])
+    return {"deleted_id": deleted["id"]}
 
 
 def main() -> None:

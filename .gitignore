@@ -13,3 +13,4 @@ secrets/
 allure-report/
 secrets/
 reports/
+.env
