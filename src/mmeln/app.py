@@ -23,7 +23,9 @@ from opentelemetry.sdk.trace.export import BatchSpanProcessor
 from psycopg.rows import dict_row
 from pydantic import BaseModel
 
-logger = logging.getLogger("mmeln.app")
+APP_NAME = "mmeln.app"
+
+logger = logging.getLogger(APP_NAME)
 logger.setLevel(logging.INFO)
 
 
@@ -94,12 +96,12 @@ def _setup_telemetry() -> tuple[logging.Logger, trace.Tracer, metrics.Counter]:
     tracer_provider = TracerProvider(resource=resource)
     tracer_provider.add_span_processor(BatchSpanProcessor(OTLPSpanExporter()))
     trace.set_tracer_provider(tracer_provider)
-    otel_tracer = trace.get_tracer("mmeln.app")
+    otel_tracer = trace.get_tracer(APP_NAME)
 
     metric_reader = PeriodicExportingMetricReader(OTLPMetricExporter())
     meter_provider = MeterProvider(resource=resource, metric_readers=[metric_reader])
     metrics.set_meter_provider(meter_provider)
-    meter = metrics.get_meter("mmeln.app")
+    meter = metrics.get_meter(APP_NAME)
     queries_counter = meter.create_counter(
         name="db.queries",
         description="Total number of database queries executed",
@@ -112,7 +114,7 @@ def _setup_telemetry() -> tuple[logging.Logger, trace.Tracer, metrics.Counter]:
     )
     set_logger_provider(logger_provider)
 
-    app_logger = logging.getLogger("mmeln.app")
+    app_logger = logging.getLogger(APP_NAME)
     app_logger.setLevel(logging.INFO)
     app_logger.addHandler(
         LoggingHandler(level=logging.INFO, logger_provider=logger_provider)
